@@ -1,23 +1,46 @@
 import asyncio
-import aiohttp
-import requests
-import re
-import pandas as pd
-import numpy as np
+import glob
 import json
 import os
-from itertools import chain
-from collections import defaultdict
+import re
 import time
-import glob
-from concurrent.futures import ThreadPoolExecutor
 import warnings
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from itertools import chain
+
+import aiohttp
+import numpy as np
+import pandas as pd
+import requests
+
 warnings.filterwarnings('ignore')
+
+# Common request headers for stats.nba.com requests
+DEFAULT_HEADERS = {
+    "Host": "stats.nba.com",
+    "Connection": "keep-alive",
+    "Pragma": "no-cache",
+    "Cache-Control": "no-cache",
+    "Dnt": "1",
+    "Sec-Ch-Ua": '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
+    "Sec-Ch-Ua-Mobile": "?1",
+    "Sec-Ch-Ua-Platform": '"Android"',
+    "User-Agent": "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36",
+    "Accept": "*/*",
+    "Origin": "https://www.nba.com",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+    "Referer": "https://www.nba.com/",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 # Load master record
 record = pd.read_csv('https://raw.githubusercontent.com/gabriel1200/shot_data/refs/heads/master/game_dates.csv')
-record['year']=record['season'].str.split('-').str[0].astype(int)+1
-record = record[['GAME_ID','year']]
+record['year'] = record['season'].str.split('-').str[0].astype(int) + 1
+record = record[['GAME_ID', 'year']]
 record.drop_duplicates(inplace=True)
 
 def get_existing_games():
@@ -163,7 +186,6 @@ def process_pbp_data(pbp_data, boxscore_data, game_id):
 
     # Process each play
     for idx, play in pbp_df.iterrows():
-        # Previous and next action logic (unchanged)
         previous_action = None
         if prev_action_type:
             if prev_action_type in ['2pt', '3pt']:
@@ -231,8 +253,8 @@ def process_pbp_data(pbp_data, boxscore_data, game_id):
             'stealPersonId': play.get('stealPersonId', ''),
             'blockPersonId': play.get('blockPersonId', ''),
             'players_on': formatted_players_on,
-            'xLegacy':play.get('xLegacy'),
-            'yLegacy':play.get('yLegacy'),
+            'xLegacy': play.get('xLegacy'),
+            'yLegacy': play.get('yLegacy'),
             'teamId': team_id,
             'game_id': game_id
         }
@@ -267,7 +289,7 @@ def verify_existing_file(game_id, year):
             
         return True
         
-    except Exception as e:
+    except Exception:
         return False
 
 async def process_game_batch(session, game_batch, all_team_lineups):
@@ -279,7 +301,7 @@ async def process_game_batch(session, game_batch, all_team_lineups):
     game_data_results = await asyncio.gather(*tasks, return_exceptions=True)
     
     # Process each game's data
-    for i, ((game_id, year), game_data_result) in enumerate(zip(game_batch, game_data_results)):
+    for (game_id, year), game_data_result in zip(game_batch, game_data_results):
         try:
             if isinstance(game_data_result, Exception):
                 print(f"Failed to fetch data for game {game_id}: {game_data_result}")
@@ -318,15 +340,12 @@ async def process_game_batch(session, game_batch, all_team_lineups):
 
 async def main_async():
     """Main async function"""
-    # Filter games since 2020-21 season
     games_to_scrape = record[record['year'] >= 2025].copy()
     print(f"Total games in master record: {len(games_to_scrape)}")
     
-    # Create directories
     os.makedirs('pbp_data', exist_ok=True)
     os.makedirs('team_lineups', exist_ok=True)
     
-    # Get existing games and filter
     existing_games = get_existing_games()
     
     games_to_process = []
@@ -352,19 +371,18 @@ async def main_async():
         print("No new games to process!")
         return
     
-    # Track results
     all_team_lineups = defaultdict(lambda: defaultdict(set))
     failed_games = []
     successful_games = 0
     
-    # Process games in batches
-    BATCH_SIZE = 20  # Process 20 games concurrently
-    MAX_CONCURRENT = 10  # Limit concurrent connections
+    BATCH_SIZE = 20
+    MAX_CONCURRENT = 10
     
     connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT, limit_per_host=MAX_CONCURRENT)
     timeout = aiohttp.ClientTimeout(total=60, connect=30)
     
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+    # Attaching the defined headers to the persistent session
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout, headers=DEFAULT_HEADERS) as session:
         for i in range(0, len(games_to_process), BATCH_SIZE):
             batch = games_to_process[i:i + BATCH_SIZE]
             batch_num = i // BATCH_SIZE + 1
@@ -375,7 +393,6 @@ async def main_async():
             try:
                 batch_results = await process_game_batch(session, batch, all_team_lineups)
                 
-                # Count results
                 for game_id, success, message in batch_results:
                     if success:
                         successful_games += 1
@@ -384,7 +401,6 @@ async def main_async():
                         failed_games.append(game_id)
                         print(f"✗ {game_id}: {message}")
                 
-                # Small delay between batches to be respectful
                 if i + BATCH_SIZE < len(games_to_process):
                     await asyncio.sleep(1)
                     
@@ -393,7 +409,6 @@ async def main_async():
                 for game_id, year in batch:
                     failed_games.append(game_id)
     
-    # Create team lineup index files (unchanged)
     print("\nCreating team lineup indexes...")
     for team_id in all_team_lineups:
         for year in all_team_lineups[team_id]:
