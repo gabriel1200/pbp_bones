@@ -25,6 +25,8 @@ Usage:
     python organize_data.py
 """
 
+import datetime
+import sys
 import pandas as pd
 import os
 import glob
@@ -45,6 +47,11 @@ from precompute_text_flags import precompute_text_flags
 # ones -- without this filter they'd get silently processed through the
 # wrong pipeline entirely, not just included as harmless extras.
 MIN_YEAR = 2021
+
+# Daily runs only rebuild the current season; pass --all to rebuild every season from MIN_YEAR.
+_today = datetime.date.today()
+SEASON_YEAR = int(os.environ.get("NBA_SEASON_YEAR") or _today.year + (_today.month >= 10))  # end year (see ~/basketball/season.sh)
+ALL_SEASONS = '--all' in sys.argv
 
 
 def load_game_dates():
@@ -158,11 +165,12 @@ def collect_and_organize_data():
             continue
         if year < MIN_YEAR:
             pre_cdn_era_skipped += 1
-        else:
+        elif ALL_SEASONS or year == SEASON_YEAR:
             pbp_files.append(file_path)
 
     print(f"Excluded {pre_cdn_era_skipped} pre-{MIN_YEAR} file(s) -- not part of this pipeline")
-    print(f"{len(pbp_files)} file(s) remain to process")
+    print(f"{len(pbp_files)} file(s) remain to process"
+          + ("" if ALL_SEASONS else f" (season {SEASON_YEAR} only; --all for every season)"))
 
     if not pbp_files:
         print(f"No post-{MIN_YEAR} PBP data files found -- nothing to do.")
