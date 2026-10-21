@@ -1,3 +1,7 @@
+import os, datetime as _dt
+_today = _dt.date.today()
+SEASON_YEAR = int(os.environ.get("NBA_SEASON_YEAR") or _today.year + (_today.month >= 10))  # end year: 2027 = 2026-27 (see ~/basketball/season.sh)
+PLAYOFFS = os.environ.get("NBA_PLAYOFFS") == "1"
 import asyncio
 import glob
 import json
@@ -340,7 +344,7 @@ async def process_game_batch(session, game_batch, all_team_lineups):
 
 async def main_async():
     """Main async function"""
-    games_to_scrape = record[record['year'] >= 2025].copy()
+    games_to_scrape = record[record['year'] >= SEASON_YEAR].copy()
     print(f"Total games in master record: {len(games_to_scrape)}")
     
     os.makedirs('pbp_data', exist_ok=True)
