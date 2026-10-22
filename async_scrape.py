@@ -20,9 +20,8 @@ import requests
 
 warnings.filterwarnings('ignore')
 
-# Common request headers for stats.nba.com requests
+# Request headers for cdn.nba.com (no Host: stats.nba.com, which the CDN answers with 403)
 DEFAULT_HEADERS = {
-    "Host": "stats.nba.com",
     "Connection": "keep-alive",
     "Pragma": "no-cache",
     "Cache-Control": "no-cache",
